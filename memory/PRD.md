@@ -45,12 +45,22 @@ and chat, seed data, and a frontend placeholder. Mobile (Expo) is delegated.
 - `GET /api/vitals/{patient_id}` now sorts **descending by `recorded_at`** so `limit=N` returns the freshest N readings.
 - `/app/memory/emulator_controls.md` documents the localhost:9001 control surface.
 
-## Infra finding
+### Phase 2 (Doctor Portal Web UI + backend additions)
+- **Seed fix**: `_generate_vitals_for_patient` now anchors all timestamps strictly in the past (≤ now). Added `python -m seed --reset` CLI flag.
+- **Backend**: `POST /api/prescriptions` (doctor-only RBAC), `GET /api/admin/doctors` (admin-only), `GET /api/chat/threads/by-patient/{patient_id}` (canonical `dp-…` thread id), `GET /api/vitals` now sorts ASC when both `from` and `to` are supplied (chart-friendly) and DESC otherwise. Empty-chat 403 fix: returns `[]` for legitimate doctor↔patient pair when the thread has no messages yet.
+- **Frontend** (`/app/frontend`): React Router setup with protected routes.
+  - `/login` — clinical login page; patients are redirected with "use mobile app" message.
+  - `/triage` — live triage dashboard. WS firehose with exponential-backoff reconnect; rows update in place; critical anomalies flash red and jump to top; risk-filter chips + name search.
+  - `/patients/:id` — patient deep-dive: three live recharts (Glucose 7d / HR 7d / SpO₂ 7d with threshold reference lines + severity-colored points), Prescription panel (read + create), Secure Chat panel (history + live WS), Video Consult placeholder (disabled, WebRTC pending).
+  - `/admin/doctors` — admin-only roster + create-doctor form.
+- All interactive elements carry `data-testid` attributes for testability.
+
+## Infra finding (Phase 1)
 The public host `health-portal-api.preview.emergentagent.com` 307-redirects WS upgrades
 to the `.internal.preview.emergentagent.com` host (Cloudflare edge). Browser WS clients
-cannot follow this redirect during handshake. **Workaround**: the React frontend already
-uses `REACT_APP_BACKEND_URL` (which is the `.internal` host), so Phase 2 WS connections
-will succeed. Documented for the platform team — not solvable from app code.
+cannot follow this redirect during handshake. **Workaround**: the React frontend uses
+`REACT_APP_BACKEND_URL` (which points at the `.internal` host), so WS connections succeed.
+Documented for the platform team — not solvable from app code.
 
 ## Endpoints
 - `POST /api/auth/register` (admin-only for doctor/admin role; patient self-register OK)
@@ -66,9 +76,10 @@ will succeed. Documented for the platform team — not solvable from app code.
 - `WS   /api/ws/chat/{thread_id}?token=`
 
 ## Backlog (prioritized)
-- **P0 (Phase 2)** – Full React doctor portal: triage dashboard, patient detail w/ live charts, chat UI, prescription writer.
-- **P1** – Normalize API response keys (`id` instead of `_id` everywhere).
-- **P1** – Replace `value_plain` with searchable index store, drop plaintext for full HIPAA mode.
-- **P2** – Expo mobile (delegated to a specialist).
-- **P2** – Audit log review UI, password reset flow, refresh tokens.
-- **P2** – Twilio SMS critical alert (parked: post-MVP enhancement).
+- **P0 (Phase 3 — delegated)** — Expo mobile patient app.
+- **P1 (Phase 4)** — Stripe billing for premium-tier patient subscription + per-seat doctor licensing.
+- **P1** — Real WebRTC video consult (replace placeholder).
+- **P1** — Normalize all responses to use `id` (drop `_id`); migrate `value_plain` to a dedicated indexed store and drop it for full HIPAA mode.
+- **P2** — Audit log review UI, password reset flow, refresh tokens.
+- **P2** — Migrate JWT from localStorage to httpOnly cookies for XSS hardening.
+- **Parked** — Twilio SMS critical alert; per-patient snooze toggle (post-MVP).
