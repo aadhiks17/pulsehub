@@ -199,6 +199,14 @@ async def admin_create_doctor(req: RegisterRequest, user: dict = Depends(get_cur
     return _user_public(doc)
 
 
+@api.get("/admin/doctors")
+async def admin_list_doctors(user: dict = Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    docs = await db.users.find({"role": "doctor"}).sort("created_at", 1).to_list(1000)
+    return [_user_public(d) for d in docs]
+
+
 # ------------------------------------------------------------------
 # Chat history
 # ------------------------------------------------------------------
@@ -233,6 +241,36 @@ async def list_chat_threads(user: dict = Depends(get_current_user)):
     return out
 
 
+@api.get("/chat/threads/by-patient/{patient_id}")
+async def chat_thread_by_patient(patient_id: str, user: dict = Depends(get_current_user)):
+    """Return the canonical doctor↔patient thread id (deterministic: sorted ids joined)."""
+    patient = await db.users.find_one({"_id": patient_id, "role": "patient"})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    # access control: patient-self or assigned doctor (or admin)
+    if user["role"] == "patient" and user["_id"] != patient_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if user["role"] == "doctor":
+        if patient.get("assigned_doctor_id") != user["_id"]:
+            raise HTTPException(status_code=403, detail="Patient not assigned to this doctor")
+        other_id = patient_id
+    elif user["role"] == "patient":
+        other_id = patient.get("assigned_doctor_id")
+    else:  # admin
+        other_id = patient.get("assigned_doctor_id") or patient_id
+
+    # canonical thread id: sorted-pair joined
+    pair = sorted([user["_id"], other_id])
+    thread_id = f"dp-{pair[0]}-{pair[1]}"
+    return {
+        "thread_id": thread_id,
+        "patient_id": patient_id,
+        "doctor_id": patient.get("assigned_doctor_id"),
+        "you": user["_id"],
+    }
+
+
 @api.get("/chat/threads/{thread_id}/messages")
 async def get_thread_messages(
     thread_id: str,
@@ -240,13 +278,17 @@ async def get_thread_messages(
     limit: int = Query(50, le=200),
     before: Optional[str] = Query(None),
 ):
-    # ensure the caller is a participant in this thread (any message with their id)
+    # If the thread already has messages, enforce participant-only.
+    # If empty, return [] silently (still safe — no data is revealed).
     participates = await db.chat_messages.find_one({
         "thread_id": thread_id,
         "$or": [{"sender_id": user["_id"]}, {"recipient_id": user["_id"]}],
     })
     if not participates and user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Not a participant in this thread")
+        any_in_thread = await db.chat_messages.find_one({"thread_id": thread_id})
+        if any_in_thread:
+            raise HTTPException(status_code=403, detail="Not a participant in this thread")
+        return []
 
     q: dict = {"thread_id": thread_id}
     if before:
@@ -437,7 +479,10 @@ async def get_vitals(
             rng["$lte"] = to
         q["recorded_at"] = rng
 
-    cursor = db.vitals.find(q).sort("recorded_at", -1).limit(limit)
+    # When a from/to window is supplied → ascending (good for charting).
+    # Otherwise default to descending so `limit=N` returns the freshest readings.
+    sort_dir = 1 if (from_ and to) else -1
+    cursor = db.vitals.find(q).sort("recorded_at", sort_dir).limit(limit)
     out = []
     async for v in cursor:
         try:

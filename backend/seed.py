@@ -64,39 +64,38 @@ def _make_vital(patient_id: str, device: str, metric: str, value: float, when: d
 
 
 def _generate_vitals_for_patient(patient_id: str, premium: bool) -> list[dict]:
-    """30 days of vitals: glucose 12/day (every 2h), HR + SpO2 6/day (every 4h).
-    Inject a few warning/critical events for realism."""
+    """30 days of vitals ending at 'now':
+       glucose every 2h (12/day = ~360), HR + SpO2 every 4h (6/day = ~180).
+       All timestamps strictly in the past. Inject a few warning/critical events.
+    """
     out: list[dict] = []
     now = _now().replace(microsecond=0)
     rng = random.Random(patient_id)  # deterministic per patient
 
-    for day in range(30):
-        day_start = (now - timedelta(days=day)).replace(hour=0, minute=0, second=0)
-        # Glucose: 12/day, normal range with slight daily drift
-        baseline = 110 + (10 if premium else 0) + rng.randint(-15, 15)
-        for i in range(12):
-            ts = day_start + timedelta(hours=i * 2, minutes=rng.randint(0, 59))
-            v = baseline + rng.randint(-30, 40)
-            # ~3% chance of an anomaly
-            if rng.random() < 0.03:
-                v = rng.choice([45, 65, 220, 270])
-            v = max(40, min(320, v))
-            out.append(_make_vital(patient_id, "cgm", "glucose", v, ts))
+    # Glucose: every 2h going back 30 days (~360 readings)
+    baseline = 110 + (10 if premium else 0)
+    for hours_ago in range(2, 30 * 24 + 1, 2):
+        ts = now - timedelta(hours=hours_ago, minutes=rng.randint(0, 59))
+        v = baseline + rng.randint(-30, 40)
+        if rng.random() < 0.03:
+            v = rng.choice([45, 65, 220, 270])
+        v = max(40, min(320, v))
+        out.append(_make_vital(patient_id, "cgm", "glucose", v, ts))
 
-        # HR + SpO2: 6/day
-        for i in range(6):
-            ts = day_start + timedelta(hours=i * 4, minutes=rng.randint(0, 59))
-            hr = 65 + rng.randint(-10, 25)
-            if rng.random() < 0.02:
-                hr = rng.choice([38, 48, 115, 130])
-            hr = max(35, min(150, hr))
-            out.append(_make_vital(patient_id, "pulseox", "hr", hr, ts))
+    # HR + SpO2: every 4h going back 30 days (~180 of each)
+    for hours_ago in range(4, 30 * 24 + 1, 4):
+        ts = now - timedelta(hours=hours_ago, minutes=rng.randint(0, 59))
+        hr = 65 + rng.randint(-10, 25)
+        if rng.random() < 0.02:
+            hr = rng.choice([38, 48, 115, 130])
+        hr = max(35, min(150, hr))
+        out.append(_make_vital(patient_id, "pulseox", "hr", hr, ts))
 
-            spo2 = 97 + rng.randint(-3, 2)
-            if rng.random() < 0.02:
-                spo2 = rng.choice([88, 92])
-            spo2 = max(85, min(100, spo2))
-            out.append(_make_vital(patient_id, "pulseox", "spo2", spo2, ts))
+        spo2 = 97 + rng.randint(-3, 2)
+        if rng.random() < 0.02:
+            spo2 = rng.choice([88, 92])
+        spo2 = max(85, min(100, spo2))
+        out.append(_make_vital(patient_id, "pulseox", "spo2", spo2, ts))
 
     return out
 
@@ -185,11 +184,13 @@ async def run_seed(db, force: bool = False) -> dict:
 
 
 async def _main():
+    import sys
+    force = "--reset" in sys.argv
     mongo_url = os.environ["MONGO_URL"]
     db_name = os.environ["DB_NAME"]
     client = AsyncIOMotorClient(mongo_url)
     db = client[db_name]
-    result = await run_seed(db, force=True)
+    result = await run_seed(db, force=force)
     print("Seed result:", result)
     client.close()
 
