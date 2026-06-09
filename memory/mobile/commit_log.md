@@ -1,0 +1,33 @@
+# PulseHub Mobile — Commit Log
+
+## Iteration 1 — Full MVP Build
+- **Commit**: 0804642b39bbe3a83d2e7b2f5433487082c33425
+- **Date**: 2026-06-09
+- **Changes**:
+  - Built complete PulseHub Patient mobile app from scratch
+  - Login screen (patient-only, blocks doctors/admins)
+  - Dashboard with live vitals (Glucose, HR, SpO₂), risk level, WebSocket connection
+  - Vitals tab with 7-day SVG line charts + self-submit form
+  - Chat tab with secure messaging (WebSocket-powered)
+  - Profile tab with patient info, prescriptions list, logout
+  - Tab-based navigation (Home, Vitals, Chat, Profile)
+  - Auth context with AsyncStorage token persistence
+  - API client matching web frontend endpoints exactly
+- **Files modified**:
+  - `mobile/src/api.ts` — API client (axios, token management)
+  - `mobile/src/AuthContext.tsx` — Auth provider/context
+  - `mobile/src/theme.ts` — Colors, constants, helpers
+  - `mobile/src/hooks/useVitalsWS.ts` — WebSocket hook for live vitals
+  - `mobile/app/_layout.tsx` — Root layout with AuthProvider
+  - `mobile/app/index.tsx` — Entry point / auth redirect
+  - `mobile/app/login.tsx` — Patient login screen
+  - `mobile/app/(tabs)/_layout.tsx` — Tab navigator
+  - `mobile/app/(tabs)/index.tsx` — Dashboard
+  - `mobile/app/(tabs)/vitals.tsx` — Vitals charts + submit
+  - `mobile/app/(tabs)/chat.tsx` — Secure chat
+  - `mobile/app/(tabs)/profile.tsx` — Profile + prescriptions + logout
+- **Web files referenced**:
+  - `frontend/src/App.js`, `frontend/src/api.js`, `frontend/src/AuthContext.jsx`
+  - `frontend/src/pages/Login.jsx`, `frontend/src/pages/Triage.jsx`, `frontend/src/pages/PatientDetail.jsx`
+  - `frontend/src/useVitalsWS.js`, `frontend/src/components/Layout.jsx`
+- **Dependencies installed**: axios, @react-native-async-storage/async-storage, react-native-svg
