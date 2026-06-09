@@ -144,7 +144,10 @@ async def register(req: RegisterRequest, request: Request):
 
 @api.post("/auth/login")
 async def login(req: LoginRequest, request: Request):
-    ip = request.client.host if request.client else "?"
+    # Honor X-Forwarded-For (first hop) so throttling works behind the K8s ingress,
+    # which rewrites request.client.host to rotating pod IPs.
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?")
     key = f"{ip}:{req.email.lower()}"
     locked_until = _login_lock.get(key, 0)
     now_ts = datetime.now(timezone.utc).timestamp()
@@ -434,7 +437,7 @@ async def get_vitals(
             rng["$lte"] = to
         q["recorded_at"] = rng
 
-    cursor = db.vitals.find(q).sort("recorded_at", 1).limit(limit)
+    cursor = db.vitals.find(q).sort("recorded_at", -1).limit(limit)
     out = []
     async for v in cursor:
         try:
