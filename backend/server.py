@@ -55,6 +55,10 @@ app = FastAPI(
 )
 api = APIRouter(prefix="/api")
 
+# In-memory login throttling (per ip:email). Reset on backend restart.
+_login_fails: dict[str, int] = {}
+_login_lock: dict[str, float] = {}
+
 
 # ------------------------------------------------------------------
 async def audit(actor_id: Optional[str], action: str, target: Optional[str], ip: Optional[str]) -> None:
@@ -140,17 +144,129 @@ async def register(req: RegisterRequest, request: Request):
 
 @api.post("/auth/login")
 async def login(req: LoginRequest, request: Request):
+    ip = request.client.host if request.client else "?"
+    key = f"{ip}:{req.email.lower()}"
+    locked_until = _login_lock.get(key, 0)
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if locked_until > now_ts:
+        raise HTTPException(status_code=429, detail=f"Too many failed attempts. Try again in {int(locked_until - now_ts)}s.")
+
     user = await db.users.find_one({"email": req.email.lower()})
     if not user or not verify_password(req.password, user["password_hash"]):
+        fails = _login_fails.get(key, 0) + 1
+        _login_fails[key] = fails
+        if fails >= 5:
+            _login_lock[key] = now_ts + 15 * 60  # 15-minute lockout
+            _login_fails[key] = 0
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    _login_fails.pop(key, None)
+    _login_lock.pop(key, None)
     token = create_access_token(user["_id"], user["email"], user["role"])
-    await audit(user["_id"], "login", user["_id"], request.client.host if request.client else None)
+    await audit(user["_id"], "login", user["_id"], ip)
     return {"access_token": token, "token_type": "bearer", "user": _user_public(user)}
 
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
     return _user_public(user)
+
+
+# ------------------------------------------------------------------
+# Admin
+# ------------------------------------------------------------------
+@api.post("/admin/doctors")
+async def admin_create_doctor(req: RegisterRequest, user: dict = Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    if await db.users.find_one({"email": req.email.lower()}):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    doc = {
+        "_id": str(uuid.uuid4()),
+        "email": req.email.lower(),
+        "password_hash": hash_password(req.password),
+        "role": "doctor",
+        "full_name": req.full_name,
+        "specialty": req.specialty or "General",
+        "premium": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(doc)
+    await audit(user["_id"], "admin.create_doctor", doc["_id"], None)
+    return _user_public(doc)
+
+
+# ------------------------------------------------------------------
+# Chat history
+# ------------------------------------------------------------------
+@api.get("/chat/threads")
+async def list_chat_threads(user: dict = Depends(get_current_user)):
+    """List distinct thread_ids this user has participated in, with the latest message."""
+    pipeline = [
+        {"$match": {"$or": [{"sender_id": user["_id"]}, {"recipient_id": user["_id"]}]}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {
+            "_id": "$thread_id",
+            "last_at": {"$first": "$created_at"},
+            "last_sender_id": {"$first": "$sender_id"},
+            "last_encrypted": {"$first": "$content_encrypted"},
+            "unread": {"$sum": {"$cond": [{"$and": [{"$eq": ["$recipient_id", user["_id"]]}, {"$eq": ["$read", False]}]}, 1, 0]}},
+        }},
+        {"$sort": {"last_at": -1}},
+    ]
+    out = []
+    async for row in db.chat_messages.aggregate(pipeline):
+        try:
+            preview = decrypt_field(row["last_encrypted"])
+        except Exception:
+            preview = ""
+        out.append({
+            "thread_id": row["_id"],
+            "last_at": row["last_at"],
+            "last_sender_id": row["last_sender_id"],
+            "last_message_preview": preview[:140],
+            "unread": row.get("unread", 0),
+        })
+    return out
+
+
+@api.get("/chat/threads/{thread_id}/messages")
+async def get_thread_messages(
+    thread_id: str,
+    user: dict = Depends(get_current_user),
+    limit: int = Query(50, le=200),
+    before: Optional[str] = Query(None),
+):
+    # ensure the caller is a participant in this thread (any message with their id)
+    participates = await db.chat_messages.find_one({
+        "thread_id": thread_id,
+        "$or": [{"sender_id": user["_id"]}, {"recipient_id": user["_id"]}],
+    })
+    if not participates and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not a participant in this thread")
+
+    q: dict = {"thread_id": thread_id}
+    if before:
+        q["created_at"] = {"$lt": before}
+    cursor = db.chat_messages.find(q).sort("created_at", -1).limit(limit)
+    msgs = []
+    async for m in cursor:
+        try:
+            content = decrypt_field(m["content_encrypted"])
+        except Exception:
+            content = ""
+        msgs.append({
+            "id": m["_id"],
+            "thread_id": m["thread_id"],
+            "sender_id": m["sender_id"],
+            "recipient_id": m.get("recipient_id"),
+            "content": content,
+            "created_at": m["created_at"],
+            "read": m.get("read", False),
+        })
+    # return in ascending chronological order for UI convenience
+    msgs.reverse()
+    return msgs
 
 
 # ------------------------------------------------------------------
@@ -181,8 +297,8 @@ async def _latest_vitals_for(patient_id: str) -> dict:
 
 @api.get("/patients")
 async def list_patients(user: dict = Depends(get_current_user)):
-    if user["role"] not in ("doctor", "admin"):
-        raise HTTPException(status_code=403, detail="Only doctors or admins can list patients")
+    if user["role"] not in ("doctor", "admin", "system"):
+        raise HTTPException(status_code=403, detail="Only doctors, admins, or system can list patients")
 
     query: dict = {"role": "patient"}
     if user["role"] == "doctor":
@@ -247,12 +363,15 @@ async def get_patient(patient_id: str, user: dict = Depends(get_current_user)):
 # ------------------------------------------------------------------
 @api.post("/vitals")
 async def ingest_vital(req: VitalCreate, user: dict = Depends(get_current_user)):
+    if user["role"] not in ("patient", "doctor", "admin", "system"):
+        raise HTTPException(status_code=403, detail="Role not permitted to ingest vitals")
     if user["role"] == "patient" and req.patient_id != user["_id"]:
         raise HTTPException(status_code=403, detail="Patients can only submit their own vitals")
     if user["role"] == "doctor":
         target = await db.users.find_one({"_id": req.patient_id})
         if not target or target.get("assigned_doctor_id") != user["_id"]:
             raise HTTPException(status_code=403, detail="Patient not assigned to this doctor")
+    # admin & system can ingest for any patient
 
     severity = classify(req.metric, req.value)
     units = {"glucose": "mg/dL", "hr": "bpm", "spo2": "%"}
@@ -276,6 +395,7 @@ async def ingest_vital(req: VitalCreate, user: dict = Depends(get_current_user))
         "type": "vital",
         "id": doc["_id"],
         "patient_id": doc["patient_id"],
+        "device": doc["device"],
         "metric": doc["metric"],
         "value": doc["value_plain"],
         "unit": doc["unit"],
@@ -520,6 +640,44 @@ async def on_startup():
         logger.info("seed: %s", result)
     except Exception as exc:
         logger.exception("seed failed: %s", exc)
+
+    # Ensure the emulator service account exists
+    try:
+        await _ensure_emulator_account()
+    except Exception as exc:
+        logger.exception("emulator account seed failed: %s", exc)
+
+
+async def _ensure_emulator_account():
+    """Create/refresh the system-role 'emulator' service account.
+    Password from env EMULATOR_PASSWORD; auto-generated & persisted to .env if missing."""
+    email = "emulator@pulsehub.system"
+    password = os.environ.get("EMULATOR_PASSWORD")
+    env_path = ROOT_DIR / ".env"
+    if not password:
+        import secrets
+        password = "Emu-" + secrets.token_urlsafe(18)
+        # append to .env so it survives restarts
+        with open(env_path, "a") as f:
+            f.write(f'\nEMULATOR_PASSWORD="{password}"\n')
+        os.environ["EMULATOR_PASSWORD"] = password
+        logger.info("generated EMULATOR_PASSWORD and saved to %s", env_path)
+
+    existing = await db.users.find_one({"email": email})
+    if not existing:
+        await db.users.insert_one({
+            "_id": str(uuid.uuid4()),
+            "email": email,
+            "password_hash": hash_password(password),
+            "role": "system",
+            "full_name": "Vitals Emulator",
+            "premium": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info("created emulator service account: %s", email)
+    elif not verify_password(password, existing["password_hash"]):
+        await db.users.update_one({"_id": existing["_id"]}, {"$set": {"password_hash": hash_password(password)}})
+        logger.info("rotated emulator service-account password")
 
 
 @app.on_event("shutdown")

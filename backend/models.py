@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 EmailStr = str
 
 
-Role = Literal["patient", "doctor", "admin"]
+Role = Literal["patient", "doctor", "admin", "system"]
 Device = Literal["cgm", "pulseox"]
 Metric = Literal["glucose", "hr", "spo2"]
 Severity = Literal["normal", "warning", "critical"]

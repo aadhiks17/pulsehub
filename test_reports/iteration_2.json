@@ -1,0 +1,38 @@
+{
+  "summary": "PulseHub Phase 1 backend tested end-to-end. 17/17 Phase 1 tests passing covering: vitals-emulator supervisor program + localhost:9001 control surface, steady CGM/PulseOx streaming into POST /api/vitals, five anomaly triggers (hypo/hyper/hypoxia/bradycardia/tachycardia) each producing the expected metric/value/severity on the next emission, WebSocket firehose (first {type:'ready'} then {type:'vital',device,metric,value,unit,severity,recorded_at} within 15s), system service account ingesting for any patient (cross-doctor), POST /api/admin/doctors with RBAC (admin OK, non-admin 403), chat threads listing + decrypted history with participant RBAC (non-participant 403, admin allowed), login throttle (5x401 → 6th=429 on localhost), and Phase 0 sanity (patient me, dr.smith sees 3 patients).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "Throttle key uses request.client.host which through Kubernetes ingress is a rotating ephemeral pod IP — the per-(ip,email) counter never accumulates 5 fails when called from the public URL. Locally on http://localhost:8001 it works correctly (5x 401 → 6th 429). Fix: honor X-Forwarded-For (first hop) when computing the throttle key, or throttle by email alone."},
+      {"endpoint": "GET /api/vitals/{patient_id}", "issue": "Sorts ascending and applies limit BEFORE returning, so with seed data dated 2026-05-11 the first 1000 results are all old; clients asking for `limit=20` never see recent live readings unless they also pass `from_=...`. Fix: sort descending by default (then optionally reverse) OR sort the post-limit slice client-side."},
+      {"endpoint": "/api/auth/login response.user", "issue": "Returns `_id` (mongo key) instead of `id`. Inconsistent with the rest of the API and forces clients to special-case the user object."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase1.py",
+    "/app/test_reports/pytest/phase1_results.xml"
+  ],
+  "action_items": [
+    "Fix login throttle to use X-Forwarded-For (first IP) so it works behind the ingress — currently 429 only triggers from inside the pod. Important for production security.",
+    "Default sort of GET /api/vitals to descending OR document `from_` requirement; presently `limit=20` always returns the oldest 20 records.",
+    "Normalize user response to expose `id` (not `_id`) for API consistency."
+  ],
+  "critical_code_review_comments": [
+    "POST /api/vitals broadcast payload correctly includes `device` field (verified via WS firehose).",
+    "_ensure_emulator_account is idempotent and rotates the password when EMULATOR_PASSWORD changes in .env (verified by reading server.py and observing 'created emulator service account' log on first boot only).",
+    "Chat messages are encrypted at rest (content_encrypted) and decrypted on GET; participant RBAC is enforced (sender_id OR recipient_id), with admin bypass — works as designed.",
+    "Vitals emulator is robust: token auto-refresh on 401, anomaly queue is per-(patient,metric) and consumed-once, /status surface exposes patients, cadence, last_reading, and pending anomaly_queue.",
+    "Supervisor config for vitals-emulator uses startsecs=5, autorestart=true — appropriate for the long-running node process."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase1.py (new — 17 tests)"
+  ],
+  "success_rate": {"backend": "100% (17/17 Phase 1)", "frontend": "n/a"},
+  "test_credentials": "Loaded from /app/memory/test_credentials.md. emulator@pulsehub.system password read from EMULATOR_PASSWORD in /app/backend/.env (Emu-yjlpNG-r9cEVUYgl0Is0dVuW at time of run).",
+  "seed_data_creation": "Test created a handful of TEST_-prefixed objects: 1+ chat threads (TEST_thread_*), 1 new doctor (test_doc_*@pulsehub.test), and several vitals readings via anomaly triggers + system-account ingestion. None modify seed integrity.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 1 tests live in /app/backend/tests/test_phase1.py and run alongside the Phase 0 file. NOTE: throttle test intentionally uses http://localhost:8001 because the public URL routes through an ingress that rotates source IPs and defeats the in-memory throttle key — this is a real backend bug to be fixed, not a test workaround to remove. Anomaly tests use `from_` window param because GET /api/vitals sorts ascending; if the backend is changed to sort desc, simplify by removing the param. Emulator control surface is localhost-only on port 9001.",
+  "rca of the issue": "Two latent backend issues surfaced by Phase 1 tests: (1) login throttle keys on request.client.host — through Kubernetes ingress the apparent source IP rotates across requests, so the per-(ip,email) counter never reaches 5; throttle works from inside the pod but not via the public URL. Trust X-Forwarded-For (first hop) or throttle by email alone. (2) GET /api/vitals sorts ASCENDING and limits BEFORE returning, so with 3600+ seed vitals dated 2026-05-11 a `limit=20` request returns only the oldest 20 and never the live stream. Sort descending by default, or have the route sort post-fetch."
+}
