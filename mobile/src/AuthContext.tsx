@@ -24,6 +24,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   completeBiometric: (success: boolean) => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthCtx = createContext<AuthContextType | null>(null);
@@ -87,9 +88,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const { data } = await api.get('/auth/me');
+      setUser(data);
+      const token = await getToken();
+      if (token) await setSession(token, data);
+    } catch {}
+  }, []);
+
   return (
     <AuthCtx.Provider
-      value={{ user, bootstrapping, biometricPending, login, logout, completeBiometric }}
+      value={{ user, bootstrapping, biometricPending, login, logout, completeBiometric, refreshUser }}
     >
       {children}
     </AuthCtx.Provider>

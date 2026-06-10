@@ -21,3 +21,20 @@
   - All lint checks pass clean
 - **Files modified**: None (verification only + cache clear)
 - **Web files referenced**: `/app/backend/seed.py` (credential verification)
+
+## Iteration 3 — Phase 4b: Tier Selection & Billing UI
+- **Commit**: c13c18cde932489b45b198c0467c7f8311d2a55e
+- **Date**: 2026-06-10
+- **Changes**:
+  - Replaced placeholder `/upgrade` screen with full tier-selection + checkout + cancel UI
+  - Integrated backend billing API endpoints: `GET /billing/tiers`, `GET /billing/me`, `POST /billing/checkout`, `POST /billing/cancel`
+  - Added `refreshUser()` to `AuthContext.tsx` for post-billing state sync
+  - Updated `chat.tsx` to re-evaluate premium status when `user.premium` changes
+  - Updated `app.json` scheme from `mobile` to `pulsehub` for deep link handling
+  - Checkout flow uses `expo-web-browser.openAuthSessionAsync` with `expo-linking.createURL`
+  - Cancel flow uses `Alert.alert` confirmation dialog + API call
+  - Shows MOCK MODE badge on tier screen for environment visibility
+  - Subscription info card shows "Premium since {date}" and active status
+  - Full round-trip verified: Free → Upgrade → Premium (Chat works) → Cancel → Free (paywall returns)
+- **Files modified**: `app/upgrade.tsx`, `src/AuthContext.tsx`, `app/(tabs)/chat.tsx`, `app.json`
+- **Web files referenced**: None (backend API endpoints only)

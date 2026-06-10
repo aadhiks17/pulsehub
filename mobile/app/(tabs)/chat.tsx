@@ -26,9 +26,11 @@ export default function ChatScreen() {
   const wsRef = useRef<WebSocket | null>(null);
   const flatListRef = useRef<FlatList>(null);
 
+  const premiumFlag = user?.premium;
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
+    setLoading(true);
     (async () => {
       try {
         const profRes = await api.get(`/patients/${userId}`);
@@ -45,7 +47,7 @@ export default function ChatScreen() {
       finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, premiumFlag]);
 
   useEffect(() => {
     if (!thread?.thread_id) return;
