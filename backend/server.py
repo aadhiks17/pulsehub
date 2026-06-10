@@ -26,7 +26,8 @@ from fastapi import (  # noqa: E402
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
+
+from database import db, mongo_client  # noqa: E402
 
 from auth import (  # noqa: E402
     create_access_token,
@@ -42,10 +43,6 @@ from billing import make_admin_router, make_router as make_billing_router  # noq
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("pulsehub")
-
-mongo_url = os.environ["MONGO_URL"]
-mongo_client = AsyncIOMotorClient(mongo_url)
-db = mongo_client[os.environ["DB_NAME"]]
 
 app = FastAPI(
     title="PulseHub API",

@@ -38,9 +38,13 @@ export function useVitalsWS({ patientId, onEvent }) {
         try {
           const msg = JSON.parse(e.data);
           if (msg.type === "vital" && onEventRef.current) onEventRef.current(msg);
-        } catch (_) {}
+        } catch (err) {
+          console.warn("[useVitalsWS] failed to parse message", err);
+        }
       };
-      ws.onerror = () => { /* allow onclose to drive reconnect */ };
+      ws.onerror = (e) => {
+        console.warn("[useVitalsWS] socket error — will reconnect", e);
+      };
       ws.onclose = () => {
         if (closedByUserRef.current) { setStatus("idle"); return; }
         setStatus("reconnecting");

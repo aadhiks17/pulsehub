@@ -187,7 +187,9 @@ function ChatPanel({ patientId, currentUser, patient }) {
             }];
           });
         }
-      } catch {}
+      } catch (err) {
+        console.warn("[ChatPanel] failed to parse WS message", err);
+      }
     };
     return () => { if (ws.readyState === WebSocket.OPEN) ws.close(); };
   }, [thread]);

@@ -83,8 +83,8 @@ async def get_current_user(
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    # Lazy import to avoid module-load cycle with server.py
-    from server import db
+    # Read directly from the shared db module — no cycle with server.py.
+    from database import db
 
     user = await db.users.find_one({"_id": payload["sub"]})
     if not user:
@@ -101,7 +101,7 @@ async def get_user_from_token(token: str) -> Optional[dict]:
         payload = decode_token(token)
     except jwt.PyJWTError:
         return None
-    from server import db
+    from database import db
 
     user = await db.users.find_one({"_id": payload["sub"]})
     if not user:
