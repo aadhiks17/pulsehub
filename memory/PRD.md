@@ -45,7 +45,15 @@ and chat, seed data, and a frontend placeholder. Mobile (Expo) is delegated.
 - `GET /api/vitals/{patient_id}` now sorts **descending by `recorded_at`** so `limit=N` returns the freshest N readings.
 - `/app/memory/emulator_controls.md` documents the localhost:9001 control surface.
 
-### Phase 2 (Doctor Portal Web UI + backend additions)
+### Phase 4 (Stripe Billing — backend + admin view)
+- New module `/app/backend/billing.py` mounted under `/api/billing/*` + `/api/admin/billing`.
+- **Mode detection**: `LIVE_MODE` only when all of `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PRICE_PREMIUM` match strict regexes (≥20 chars after the type prefix). Anything else → `MOCK_MODE` with boot log line.
+- Endpoints: `GET /api/billing/tiers` (public), `GET /api/billing/me` (patient), `POST /api/billing/checkout` (patient), `POST /api/billing/cancel` (patient), `POST /api/billing/webhook` (live-only, signature verified), `GET /api/admin/billing` (admin).
+- Mock-only HTML flow: `GET /api/billing/mock-checkout` (branded $9.99 card with simulate-success/cancel buttons) → `POST /api/billing/mock-confirm` → same `_set_premium` code path as the real `checkout.session.completed` webhook. Result page at `/api/billing/mock-result`.
+- Mongo: `billing_sessions` collection + new user fields (`premium_since`, `premium_canceled_at`, `stripe_subscription_id`, `stripe_customer_id`, `stripe_subscription_status`). `audit_log` rows for `checkout_initiated`, `premium_enabled`, `premium_disabled`.
+- Resubscribe correctly `$unset`s `premium_canceled_at` (verified round-trip).
+- **Doctor portal**: Billing Overview section appended to `/admin/doctors` (admin only): mode chip + 5-column patient billing table.
+- Docs: `/app/memory/stripe_testing.md`.
 - **Seed fix**: `_generate_vitals_for_patient` now anchors all timestamps strictly in the past (≤ now). Added `python -m seed --reset` CLI flag.
 - **Backend**: `POST /api/prescriptions` (doctor-only RBAC), `GET /api/admin/doctors` (admin-only), `GET /api/chat/threads/by-patient/{patient_id}` (canonical `dp-…` thread id), `GET /api/vitals` now sorts ASC when both `from` and `to` are supplied (chart-friendly) and DESC otherwise. Empty-chat 403 fix: returns `[]` for legitimate doctor↔patient pair when the thread has no messages yet.
 - **Frontend** (`/app/frontend`): React Router setup with protected routes.

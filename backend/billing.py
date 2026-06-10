@@ -110,15 +110,20 @@ async def _set_premium(db, user_id: str, *, on: bool, session_id: Optional[str] 
         raise HTTPException(status_code=404, detail="User not found")
 
     update: dict = {"premium": on}
+    unset: dict = {}
     if on:
         update["premium_since"] = _now()
         if subscription_id: update["stripe_subscription_id"] = subscription_id
         if customer_id:     update["stripe_customer_id"] = customer_id
-        update.pop("premium_canceled_at", None)
+        # Clear any prior cancellation timestamp on Mongo (a dict .pop won't reach Mongo).
+        unset["premium_canceled_at"] = ""
     else:
         update["premium_canceled_at"] = _now()
 
-    await db.users.update_one({"_id": user_id}, {"$set": update})
+    mongo_op: dict = {"$set": update}
+    if unset:
+        mongo_op["$unset"] = unset
+    await db.users.update_one({"_id": user_id}, mongo_op)
 
     await db.audit_log.insert_one({
         "_id": str(uuid.uuid4()),
@@ -417,15 +422,7 @@ def make_router(db, get_current_user) -> APIRouter:
                            mode="mock")
         return {"premium": False, "status": "canceled"}
 
-    # -------- admin overview --------
-    @router.get("/admin/billing", include_in_schema=True)
-    async def admin_billing(user: dict = Depends(get_current_user)):
-        # Mounted under /api/billing/admin/billing — but spec asks for /api/admin/billing.
-        # We expose both for convenience; the router prefix limits this one to /api/billing/admin/billing.
-        raise HTTPException(status_code=404, detail="Use /api/admin/billing instead")
-
     return router
-
 
 def make_admin_router(db, get_current_user) -> APIRouter:
     """Separate small router for /api/admin/billing because the billing router is
