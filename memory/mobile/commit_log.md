@@ -1,33 +1,23 @@
 # PulseHub Mobile — Commit Log
 
-## Iteration 1 — Full MVP Build
-- **Commit**: 0804642b39bbe3a83d2e7b2f5433487082c33425
-- **Date**: 2026-06-09
+## Iteration 1 — MVP Scaffold
+- **Commit**: (pre-fork initial build)
+- **Changes**: Initial Expo Router setup, auth flow with expo-secure-store, biometric integration, tab structure, api client, WebSocket vitals hook.
+- **Files modified**: All mobile files created from scratch.
+
+## Iteration 2 — Phase 3 Corrections: 4-Tab Refactor & Verification
+- **Commit**: 157b0475d31417b71ce0135acfbacf85d52b3327
+- **Date**: 2026-06-10
 - **Changes**:
-  - Built complete PulseHub Patient mobile app from scratch
-  - Login screen (patient-only, blocks doctors/admins)
-  - Dashboard with live vitals (Glucose, HR, SpO₂), risk level, WebSocket connection
-  - Vitals tab with 7-day SVG line charts + self-submit form
-  - Chat tab with secure messaging (WebSocket-powered)
-  - Profile tab with patient info, prescriptions list, logout
-  - Tab-based navigation (Home, Vitals, Chat, Profile)
-  - Auth context with AsyncStorage token persistence
-  - API client matching web frontend endpoints exactly
-- **Files modified**:
-  - `mobile/src/api.ts` — API client (axios, token management)
-  - `mobile/src/AuthContext.tsx` — Auth provider/context
-  - `mobile/src/theme.ts` — Colors, constants, helpers
-  - `mobile/src/hooks/useVitalsWS.ts` — WebSocket hook for live vitals
-  - `mobile/app/_layout.tsx` — Root layout with AuthProvider
-  - `mobile/app/index.tsx` — Entry point / auth redirect
-  - `mobile/app/login.tsx` — Patient login screen
-  - `mobile/app/(tabs)/_layout.tsx` — Tab navigator
-  - `mobile/app/(tabs)/index.tsx` — Dashboard
-  - `mobile/app/(tabs)/vitals.tsx` — Vitals charts + submit
-  - `mobile/app/(tabs)/chat.tsx` — Secure chat
-  - `mobile/app/(tabs)/profile.tsx` — Profile + prescriptions + logout
-- **Web files referenced**:
-  - `frontend/src/App.js`, `frontend/src/api.js`, `frontend/src/AuthContext.jsx`
-  - `frontend/src/pages/Login.jsx`, `frontend/src/pages/Triage.jsx`, `frontend/src/pages/PatientDetail.jsx`
-  - `frontend/src/useVitalsWS.js`, `frontend/src/components/Layout.jsx`
-- **Dependencies installed**: axios, @react-native-async-storage/async-storage, react-native-svg
+  - Fixed Metro cache error referencing deleted `vitals.tsx` (cleared `.metro-cache`, `.expo/web/cache`, `node_modules/.cache`)
+  - Verified all 4 tab screens compile and render correctly
+  - Tested login flow with both free (`patient1@pulsehub.test`) and premium (`patient4@pulsehub.test`) users
+  - Confirmed chat paywall for free users, full chat for premium users
+  - Confirmed WS "Live" connection indicator in Home header
+  - Confirmed premium badge on Profile (green for premium, gray for free)
+  - Confirmed biometric toggle code present (hidden on web since no hardware — correct behavior)
+  - Confirmed prescriptions tab standalone with data rendering
+  - External preview URL (`expo-health-portal-api.preview.emergentagent.com`) shows CDN "Preview Unavailable" — known infra issue
+  - All lint checks pass clean
+- **Files modified**: None (verification only + cache clear)
+- **Web files referenced**: `/app/backend/seed.py` (credential verification)

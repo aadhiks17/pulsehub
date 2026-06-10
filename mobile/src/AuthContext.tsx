@@ -1,5 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api, clearSession, getStoredUser, getToken, setSession } from './api';
+import {
+  api,
+  clearSession,
+  getToken,
+  setSession,
+  getBiometricEnabled,
+} from './api';
 
 interface User {
   _id: string;
@@ -7,14 +13,17 @@ interface User {
   email: string;
   full_name: string;
   role: string;
+  premium?: boolean;
   [key: string]: any;
 }
 
 interface AuthContextType {
   user: User | null;
   bootstrapping: boolean;
+  biometricPending: boolean;
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
+  completeBiometric: (success: boolean) => Promise<void>;
 }
 
 const AuthCtx = createContext<AuthContextType | null>(null);
@@ -22,6 +31,7 @@ const AuthCtx = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [bootstrapping, setBootstrapping] = useState(true);
+  const [biometricPending, setBiometricPending] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -30,6 +40,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setBootstrapping(false);
         return;
       }
+
+      const bioEnabled = await getBiometricEnabled();
+      if (bioEnabled) {
+        setBiometricPending(true);
+        setBootstrapping(false);
+        return;
+      }
+
       try {
         const { data } = await api.get('/auth/me');
         setUser(data);
@@ -41,6 +59,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setBootstrapping(false);
       }
     })();
+  }, []);
+
+  const completeBiometric = useCallback(async (success: boolean) => {
+    setBiometricPending(false);
+    if (!success) return;
+    const token = await getToken();
+    if (!token) return;
+    try {
+      const { data } = await api.get('/auth/me');
+      setUser(data);
+      await setSession(token, data);
+    } catch {
+      await clearSession();
+    }
   }, []);
 
   const login = useCallback(async (email: string, password: string): Promise<User> => {
@@ -56,7 +88,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ user, login, logout, bootstrapping }}>
+    <AuthCtx.Provider
+      value={{ user, bootstrapping, biometricPending, login, logout, completeBiometric }}
+    >
       {children}
     </AuthCtx.Provider>
   );

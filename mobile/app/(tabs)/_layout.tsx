@@ -33,20 +33,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="vitals"
-        options={{
-          title: 'Vitals',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="pulse" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="chat"
         options={{
           title: 'Chat',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubbles" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="prescriptions"
+        options={{
+          title: 'Rx',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="medical" size={size} color={color} />
           ),
         }}
       />

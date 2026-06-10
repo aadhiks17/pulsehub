@@ -1,5 +1,5 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSecureItem, setSecureItem, deleteSecureItem } from './secureStore';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 export const API_BASE = `${BACKEND_URL}/api`;
@@ -7,13 +7,14 @@ export const WS_BASE = BACKEND_URL.replace(/^http/, 'ws') + '/api';
 
 const TOKEN_KEY = 'pulsehub_jwt';
 const USER_KEY = 'pulsehub_user';
+const BIO_KEY = 'biometric_enabled';
 
 export async function getToken(): Promise<string | null> {
-  return AsyncStorage.getItem(TOKEN_KEY);
+  return getSecureItem(TOKEN_KEY);
 }
 
 export async function getStoredUser(): Promise<any | null> {
-  const raw = await AsyncStorage.getItem(USER_KEY);
+  const raw = await getSecureItem(USER_KEY);
   try {
     return raw ? JSON.parse(raw) : null;
   } catch {
@@ -22,13 +23,27 @@ export async function getStoredUser(): Promise<any | null> {
 }
 
 export async function setSession(token: string, user: any): Promise<void> {
-  await AsyncStorage.setItem(TOKEN_KEY, token);
-  await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
+  await setSecureItem(TOKEN_KEY, token);
+  await setSecureItem(USER_KEY, JSON.stringify(user));
 }
 
 export async function clearSession(): Promise<void> {
-  await AsyncStorage.removeItem(TOKEN_KEY);
-  await AsyncStorage.removeItem(USER_KEY);
+  await deleteSecureItem(TOKEN_KEY);
+  await deleteSecureItem(USER_KEY);
+}
+
+export async function getBiometricEnabled(): Promise<boolean> {
+  const val = await getSecureItem(BIO_KEY);
+  return val === 'true';
+}
+
+export async function getBiometricAsked(): Promise<boolean> {
+  const val = await getSecureItem(BIO_KEY);
+  return val !== null;
+}
+
+export async function setBiometricEnabled(enabled: boolean): Promise<void> {
+  await setSecureItem(BIO_KEY, enabled ? 'true' : 'false');
 }
 
 export const api = axios.create({ baseURL: API_BASE, timeout: 12000 });
