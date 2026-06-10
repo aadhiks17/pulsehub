@@ -161,18 +161,44 @@ async def run_seed(db, force: bool = False) -> dict:
             await db.vitals.insert_many(vitals)
             vitals_total += len(vitals)
 
-    # --- a couple of prescriptions ---
-    for i, pid in enumerate(patient_ids[:3]):
-        await db.prescriptions.insert_one({
-            "_id": str(uuid.uuid4()),
-            "patient_id": pid,
-            "doctor_id": doctor_ids[0],
-            "drug": "Metformin",
-            "dosage": "500mg",
-            "frequency": "Twice daily",
-            "notes": "Take with meals.",
-            "issued_at": _now().isoformat(),
-        })
+    # --- prescriptions (each patient gets 1-3, assigned by their doctor) ---
+    # Keyed by patient index (0..4) → list of (drug, dosage, frequency, notes, days_ago)
+    rx_plans = {
+        0: [  # patient1 — Dr Smith
+            ("Metformin",  "500mg", "Twice daily",  "Take with meals.",            45),
+            ("Lisinopril", "10mg",  "Once daily",   "Morning dose; monitor BP.",   20),
+        ],
+        1: [  # patient2 — Dr Smith
+            ("Atorvastatin", "20mg", "Nightly",     "Lipid management.",           30),
+        ],
+        2: [  # patient3 — Dr Smith
+            ("Insulin Glargine", "20u",  "Nightly",   "Subcutaneous; rotate sites.", 55),
+            ("Aspirin",          "81mg", "Once daily","Cardio-protective.",          15),
+        ],
+        3: [  # patient4 — Dr Jones
+            ("Albuterol Inhaler", "90mcg",  "PRN",         "Rescue inhaler; max 8 puffs/day.", 50),
+            ("Fluticasone",       "250mcg", "Twice daily", "Maintenance ICS.",                 25),
+            ("Montelukast",       "10mg",   "Once daily",  "Evening dose.",                    10),
+        ],
+        4: [  # patient5 — Dr Jones
+            ("Levothyroxine", "50mcg", "Once daily", "Empty stomach, 30 min before food.", 35),
+        ],
+    }
+    rx_rng = random.Random("pulsehub-prescriptions")
+    for i, pid in enumerate(patient_ids):
+        doctor_idx = PATIENTS[i]["doctor_idx"]
+        for (drug, dosage, frequency, notes, days_ago) in rx_plans.get(i, []):
+            issued = _now() - timedelta(days=days_ago, hours=rx_rng.randint(0, 23))
+            await db.prescriptions.insert_one({
+                "_id": str(uuid.uuid4()),
+                "patient_id": pid,
+                "doctor_id": doctor_ids[doctor_idx],
+                "drug": drug,
+                "dosage": dosage,
+                "frequency": frequency,
+                "notes": notes,
+                "issued_at": issued.isoformat(),
+            })
 
     return {
         "skipped": False,
