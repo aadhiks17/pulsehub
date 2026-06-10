@@ -1,0 +1,29 @@
+{
+  "summary": "Phase 4 Stripe Billing (MOCK MODE) end-to-end verified. Backend: 10/10 pytest tests passing in /app/backend/tests/test_phase4_billing.py — tier catalog public, /billing/me role-gating (patient ok, doctor 403), /billing/checkout role-gating (doctor 403, admin 403, tier='free' → 400), mock checkout URL is https + uses ingress host, session_id starts with 'mock_', mock-checkout HTML renders required data-testids ($9.99 + 4 features), unknown session → 404, /mock-confirm flips premium=true with stripe_subscription_id=sub_mock_*, stripe_customer_id=cus_mock_*, audit_log rows written (premium_enabled), idempotent (2 audit rows but state stays consistent), /cancel flips premium=false + audit 'premium_disabled', webhook → 404 in mock mode, /api/admin/billing → 403 for doctor, 200 for admin with mode='mock' + 5 patients. Frontend: mock checkout page renders branded PulseHub card + 'MOCK CHECKOUT' badge + Premium $9.99/mo + 4 feature bullets + simulate-success/cancel buttons; Simulate Success navigates to /api/billing/mock-result?status=success page. Admin SPA /admin/doctors shows 'Stripe: mock' chip + admin-billing-table with 5 rows, and patient2 row reflects 'premium' with truncated sub_mock_… after running a mock-confirm.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_phase4_billing.py",
+    "/app/test_reports/pytest/phase4_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Mode detection regex (^sk_(test|live)_..., ^whsec_..., ^price_...) correctly classifies empty/placeholder env vars as MOCK MODE; LIVE_MODE only triggers when ALL three look valid. Good fail-closed design.",
+    "Mock checkout URL is built from X-Forwarded-Proto + X-Forwarded-Host so it resolves to the public https ingress host — verified live (returns https://health-portal-api.internal.preview.emergentagent.com/api/billing/mock-checkout?...).",
+    "_set_premium() is idempotent w.r.t. final user state but DOES write a duplicate audit_log row on repeated mock-confirm of the same session (observed: 2 'premium_enabled' rows for the same session). Spec explicitly allows this. If tighter audit is desired later, consider an UPSERT-style check before insertion or short-circuit when the user is already premium with the same subscription_id.",
+    "Stale field cleanup: when toggling premium=on, premium_canceled_at is popped via update.pop() but pop on a plain dict doesn't reach Mongo. To actually clear the prior cancel timestamp in Mongo you'd need an explicit $unset. Currently after a cancel→resubscribe cycle the user document will keep an old premium_canceled_at value even though /me reports status='active' (because /me prioritizes premium=true). Low priority — does not affect API contract, but documenting for future polish.",
+    "make_router() defines a dead /api/billing/admin/billing route that just raises 404 with a 'use /api/admin/billing instead' message. Suggest deleting that handler since the real endpoint is exposed via make_admin_router; otherwise it leaks an undocumented 404-only route into OpenAPI schema.",
+    "Bare 'except Exception as e' on webhook construct_event leaks raw stripe error into 400 detail. Fine for debugging in live mode, but consider redacting in prod.",
+    "Webhook handler relies on dict access into event['data']['object'] — for malformed events this would raise unhandled and return 500. Wrap in try/except inside the handler or trust the SDK signature path."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase4_billing.py (new — 10 tests, all passing)"
+  ],
+  "success_rate": { "backend": "100% (10/10 Phase 4)", "frontend": "100% (mock checkout page + admin billing overview verified)" },
+  "test_credentials": "Loaded from /app/memory/test_credentials.md (admin@pulsehub.test, patient1/2@pulsehub.test, dr.smith@pulsehub.test).",
+  "seed_data_creation": "Per-test mock checkout sessions (billing_sessions collection) for patient1 and patient2; multiple audit_log rows (checkout_initiated, premium_enabled, premium_disabled). Tests run a /billing/cancel teardown for patient1 and patient2 so they end the run in their pre-test 'free/canceled' state. Patient4/Patient5 remain pre-seed-premium without stripe_subscription_id (documented as expected).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 4 billing tests at /app/backend/tests/test_phase4_billing.py — re-runnable, idempotent (each round-trip ends with a /cancel teardown). Mock checkout URL pattern: https://<ingress-host>/api/billing/mock-checkout?session_id=mock_<uuid>&user_id=<uid>. Frontend admin section selectors: [data-testid=admin-billing-section], [data-testid=admin-billing-mode], [data-testid=admin-billing-table], [data-testid=admin-billing-row-<patientId>]. Mock checkout selectors: [data-testid=mock-checkout], [data-testid=mock-success-btn], [data-testid=mock-fail-btn], [data-testid=mock-result-success|cancel]. Webhook intentionally 404 in mock; to test live-mode signature enforcement, set STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_PREMIUM to real-shaped values and restart backend, then POST an unsigned body to /api/billing/webhook → expect 400 'Invalid signature'.",
+  "rca of the issue": "No regressions or bugs found. Two non-blocking polish items called out under critical_code_review_comments: (a) premium_canceled_at not $unset on resubscribe, (b) dead /api/billing/admin/billing handler that only returns 404."
+}

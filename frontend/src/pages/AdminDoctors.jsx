@@ -1,6 +1,77 @@
 import { useEffect, useState } from "react";
 import { api, formatApiError } from "../api";
 
+function BillingOverview() {
+  const [data, setData] = useState({ mode: "...", patients: [] });
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.get("/admin/billing")
+      .then((r) => setData(r.data))
+      .catch((e) => setError(formatApiError(e)));
+  }, []);
+
+  return (
+    <div className="mt-10" data-testid="admin-billing-section">
+      <div className="flex items-baseline justify-between mb-3">
+        <h2 className="text-xl font-semibold tracking-tight">Billing Overview</h2>
+        <span className={`text-xs px-2 py-0.5 rounded-full border ${
+          data.mode === "live"
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            : "bg-amber-50 text-amber-700 border-amber-200"
+        }`} data-testid="admin-billing-mode">
+          Stripe: {data.mode}
+        </span>
+      </div>
+      {error && <div className="text-sm rounded-md border border-rose-200 bg-rose-50 text-rose-800 px-3 py-2 mb-3">{error}</div>}
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <table className="w-full text-sm" data-testid="admin-billing-table">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th className="text-left px-4 py-2.5">Patient</th>
+              <th className="text-left px-4 py-2.5">Status</th>
+              <th className="text-left px-4 py-2.5">Premium since</th>
+              <th className="text-left px-4 py-2.5">Stripe Subscription</th>
+              <th className="text-left px-4 py-2.5">Customer</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.patients.map((p) => (
+              <tr key={p.id} className="border-t border-slate-100" data-testid={`admin-billing-row-${p.id}`}>
+                <td className="px-4 py-2.5">
+                  <div className="font-medium">{p.full_name}</div>
+                  <div className="text-xs text-slate-500">{p.email}</div>
+                </td>
+                <td className="px-4 py-2.5">
+                  {p.premium ? (
+                    <span className="text-xs px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">premium</span>
+                  ) : p.premium_canceled_at ? (
+                    <span className="text-xs px-2 py-0.5 rounded-full border bg-slate-50 text-slate-600 border-slate-200">canceled</span>
+                  ) : (
+                    <span className="text-xs px-2 py-0.5 rounded-full border bg-slate-50 text-slate-600 border-slate-200">free</span>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-xs text-slate-600">
+                  {p.premium_since ? new Date(p.premium_since).toLocaleDateString() : "—"}
+                </td>
+                <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
+                  {p.stripe_subscription_id ? `${p.stripe_subscription_id.slice(0, 16)}…` : "—"}
+                </td>
+                <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
+                  {p.stripe_customer_id ? `${p.stripe_customer_id.slice(0, 16)}…` : "—"}
+                </td>
+              </tr>
+            ))}
+            {data.patients.length === 0 && (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No patients.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDoctors() {
   const [doctors, setDoctors] = useState([]);
   const [form, setForm] = useState({ email: "", password: "", full_name: "", specialty: "" });
@@ -87,6 +158,8 @@ export default function AdminDoctors() {
           </button>
         </form>
       </div>
+
+      <BillingOverview />
     </div>
   );
 }

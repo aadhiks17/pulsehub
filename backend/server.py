@@ -38,6 +38,7 @@ from auth import (  # noqa: E402
 from hipaa_utils import decrypt_field, encrypt_field  # noqa: E402
 from models import LoginRequest, PrescriptionCreate, RegisterRequest, VitalCreate  # noqa: E402
 from risk import classify, risk_level_from_latest  # noqa: E402
+from billing import make_admin_router, make_router as make_billing_router  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("pulsehub")
@@ -660,6 +661,8 @@ async def ws_chat(websocket: WebSocket, thread_id: str, token: str = Query(...))
 # Include router, CORS, startup
 # ------------------------------------------------------------------
 app.include_router(api)
+app.include_router(make_billing_router(db, get_current_user))
+app.include_router(make_admin_router(db, get_current_user))
 
 app.add_middleware(
     CORSMiddleware,
