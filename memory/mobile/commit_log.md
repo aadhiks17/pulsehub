@@ -38,3 +38,17 @@
   - Full round-trip verified: Free → Upgrade → Premium (Chat works) → Cancel → Free (paywall returns)
 - **Files modified**: `app/upgrade.tsx`, `src/AuthContext.tsx`, `app/(tabs)/chat.tsx`, `app.json`
 - **Web files referenced**: None (backend API endpoints only)
+
+## Iteration 4 — Bug Fix: Cancel Premium non-functional on Expo Web
+- **Commit**: 0b6cb692bdb8b4f029cecb6e917c27c1d6973f6d
+- **Date**: 2026-06-10
+- **Changes**:
+  - Root cause: `Alert.alert()` from react-native is a no-op on web — no confirmation dialog appears, so the cancel callback never fires
+  - Fix: Platform.OS branching — on web uses `window.confirm()`, on native uses `ConfirmDialog` component (custom modal)
+  - Applied same fix to Profile's "Sign Out" button (also a critical path using Alert.alert)
+  - Created `src/components/ConfirmDialog.tsx` — reusable cross-platform confirmation dialog for native
+  - Upgraded Cancel Premium button from `TouchableOpacity` to `Pressable` with `role="button"` for better web accessibility
+  - Audited all `Alert.alert()` calls: only 3 found — cancel (fixed), logout (fixed), biometric prompt (safe — only fires on native with hardware)
+  - Full cancel round-trip verified via API: Premium → Cancel → Free → Chat paywall returns → Profile badge reverts
+- **Files modified**: `app/upgrade.tsx`, `app/(tabs)/profile.tsx`, `src/components/ConfirmDialog.tsx` (new)
+- **Web files referenced**: None

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Alert, Platform,
+  RefreshControl, Platform, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -11,6 +11,7 @@ import * as Linking from 'expo-linking';
 import { useAuth } from '../src/AuthContext';
 import { api, formatApiError } from '../src/api';
 import { Colors } from '../src/theme';
+import ConfirmDialog from '../src/components/ConfirmDialog';
 
 interface Tier { id: string; name: string; price_usd: number; features: string[]; }
 interface BillingInfo { premium: boolean; since?: string; status?: string; stripe_subscription_id?: string; tier?: string; mode?: string; }
@@ -26,6 +27,7 @@ export default function UpgradeScreen() {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -103,31 +105,30 @@ export default function UpgradeScreen() {
   };
 
   const handleCancel = () => {
-    Alert.alert(
-      'Cancel Premium',
-      "Cancel your Premium subscription? You'll lose access to real-time doctor chat and continuous device streaming.",
-      [
-        { text: 'Keep Premium', style: 'cancel' },
-        {
-          text: 'Cancel Subscription',
-          style: 'destructive',
-          onPress: async () => {
-            setActionLoading(true);
-            try {
-              await api.post('/billing/cancel');
-              const { data } = await api.get('/billing/me');
-              setBilling(data);
-              await refreshUser();
-              showToast('Subscription canceled', 'info');
-            } catch (e: any) {
-              setError(formatApiError(e));
-            } finally {
-              setActionLoading(false);
-            }
-          },
-        },
-      ],
-    );
+    if (Platform.OS === 'web') {
+      const msg = "Cancel your Premium subscription? You'll lose access to real-time doctor chat and continuous device streaming.";
+      if (typeof window !== 'undefined' && window.confirm(msg)) {
+        confirmCancel();
+      }
+    } else {
+      setShowCancelDialog(true);
+    }
+  };
+
+  const confirmCancel = async () => {
+    setShowCancelDialog(false);
+    setActionLoading(true);
+    try {
+      await api.post('/billing/cancel');
+      const { data } = await api.get('/billing/me');
+      setBilling(data);
+      await refreshUser();
+      showToast('Subscription canceled', 'info');
+    } catch (e: any) {
+      setError(formatApiError(e));
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const isPremium = billing?.premium === true;
@@ -260,13 +261,24 @@ export default function UpgradeScreen() {
                 </Text>
               )}
             </View>
-            <TouchableOpacity testID="cancel-subscription-btn" style={s.cancelBtn} onPress={handleCancel} disabled={actionLoading} activeOpacity={0.7}>
+            <Pressable testID="cancel-subscription-btn" style={s.cancelBtn} onPress={handleCancel} disabled={actionLoading} role="button">
               <Ionicons name="close-circle-outline" size={18} color={Colors.critical} />
               <Text style={s.cancelBtnTxt}>Cancel Premium</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         )}
       </ScrollView>
+
+      <ConfirmDialog
+        visible={showCancelDialog}
+        title="Cancel Premium"
+        message="Cancel your Premium subscription? You'll lose access to real-time doctor chat and continuous device streaming."
+        confirmText="Cancel Subscription"
+        cancelText="Keep Premium"
+        destructive
+        onConfirm={confirmCancel}
+        onCancel={() => setShowCancelDialog(false)}
+      />
     </SafeAreaView>
   );
 }

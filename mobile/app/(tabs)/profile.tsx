@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Alert, Switch,
+  RefreshControl, Switch, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -10,10 +10,12 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { useAuth } from '../../src/AuthContext';
 import { api, formatApiError, getBiometricEnabled, setBiometricEnabled } from '../../src/api';
 import { Colors } from '../../src/theme';
+import ConfirmDialog from '../../src/components/ConfirmDialog';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const userId = user?._id || user?.id || '';
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -52,10 +54,19 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: async () => { await logout(); router.replace('/login'); } },
-    ]);
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Are you sure you want to sign out?')) {
+        confirmLogout();
+      }
+    } else {
+      setShowLogoutDialog(true);
+    }
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutDialog(false);
+    await logout();
+    router.replace('/login');
   };
 
   const pp = profile?.profile || {};
@@ -126,6 +137,17 @@ export default function ProfileScreen() {
 
         <Text style={s.version}>PulseHub Patient App v1.0.0</Text>
       </ScrollView>
+
+      <ConfirmDialog
+        visible={showLogoutDialog}
+        title="Sign Out"
+        message="Are you sure you want to sign out?"
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        destructive
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutDialog(false)}
+      />
     </SafeAreaView>
   );
 }
