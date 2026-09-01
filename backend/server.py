@@ -615,11 +615,32 @@ async def ws_vitals(websocket: WebSocket, token: str = Query(...), patient_id: O
         await vitals_hub.unsubscribe(websocket)
 
 
+# ------------------------------------------------------------------
+# Chat policy
+# ------------------------------------------------------------------
+# Premium chat: patients require `premium == True`; doctors/admins always allowed.
+# Enforced on both WS handshake AND every inbound message (premium can flip mid-session).
+# Close code 4403 ("premium_required") is used so the client can distinguish from auth (1008).
+# ------------------------------------------------------------------
+async def _patient_chat_allowed(user_id: str) -> bool:
+    """Re-read current premium status from DB. Returns True if patient may chat."""
+    fresh = await db.users.find_one({"_id": user_id}, {"premium": 1, "role": 1})
+    if not fresh:
+        return False
+    if fresh.get("role") != "patient":
+        return True
+    return bool(fresh.get("premium"))
+
+
 @app.websocket("/api/ws/chat/{thread_id}")
 async def ws_chat(websocket: WebSocket, thread_id: str, token: str = Query(...)):
     user = await get_user_from_token(token)
     if not user:
         await websocket.close(code=1008)
+        return
+    # Premium gate on handshake — patients only
+    if user.get("role") == "patient" and not user.get("premium"):
+        await websocket.close(code=4403, reason="premium_required")
         return
     await websocket.accept()
     await chat_hub.join(thread_id, websocket)
@@ -627,6 +648,10 @@ async def ws_chat(websocket: WebSocket, thread_id: str, token: str = Query(...))
         await websocket.send_json({"type": "joined", "thread_id": thread_id, "user": user["email"]})
         while True:
             data = await websocket.receive_json()
+            # Re-check premium on every inbound message (may have flipped off mid-session)
+            if user.get("role") == "patient" and not await _patient_chat_allowed(user["_id"]):
+                await websocket.close(code=4403, reason="premium_required")
+                return
             recipient_id = data.get("recipient_id")
             content = data.get("content", "")
             msg = {
